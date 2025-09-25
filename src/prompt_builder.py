@@ -38,33 +38,34 @@ def build_user_text(user_dish_description: str, include_example: bool = True) ->
     """Tạo nội dung text cho user message"""
     schema_str = json.dumps(DISH_JSON_SCHEMA, ensure_ascii=False)
     
-    user_text = f"""Nhiệm vụ: Từ mô tả sau, hãy xuất JSON nguyên liệu theo đúng schema.
+    user_text = f"""
+    Nhiệm vụ: Từ mô tả sau, hãy xuất JSON nguyên liệu theo đúng schema.
 
-Mô tả món ăn:
-\"\"\"{user_dish_description}\"\"\"
+    Mô tả món ăn:
+    \"\"\"{user_dish_description}\"\"\"
 
-Yêu cầu định dạng:
-- Trả về duy nhất một JSON.
-- Tuân thủ schema (bên dưới) cả về key và kiểu.
-- QUAN TRỌNG: Tách riêng số lượng và đơn vị:
-  + "quantity": chỉ chứa SỐ (ví dụ: "200", "1", "2")
-  + "unit": chỉ chứa ĐƠN VỊ (ví dụ: "g", "ml", "củ", "nhánh", "quả", "tép")
-- Nếu không có đơn vị rõ ràng: unit = null
+    Yêu cầu định dạng:
+    - Trả về duy nhất một JSON.
+    - Tuân thủ schema (bên dưới) cả về key và kiểu.
+    - QUAN TRỌNG: Tách riêng số lượng và đơn vị:
+        + "quantity": chỉ chứa SỐ (ví dụ: "200", "1", "2")
+        + "unit": chỉ chứa ĐƠN VỊ (ví dụ: "g", "ml", "củ", "nhánh", "quả", "tép")
+    - Nếu không có đơn vị rõ ràng: unit = null
 
-Schema (JSON Schema):
-{schema_str}"""
+    Schema (JSON Schema):
+    {schema_str}"""
 
     if include_example:
         example_str = json.dumps(FEW_SHOT_EXAMPLE, ensure_ascii=False)
         user_text += f"""
 
-Ví dụ (chỉ tham khảo, KHÔNG lẫn vào output):
-{example_str}"""
+    Ví dụ (chỉ tham khảo, KHÔNG lẫn vào output):
+    {example_str}"""
 
-    user_text += """
+        user_text += """
 
-Lưu ý: Quantity LUÔN là chuỗi số ("1", "200", "0.5"), Unit là chuỗi đơn vị ("g", "ml", "củ") hoặc null.
-Trước khi trả: tự kiểm tra JSON hợp lệ theo schema. Nếu chưa hợp lệ, tự sửa rồi mới trả."""
+    Lưu ý: Quantity LUÔN là chuỗi số ("1", "200", "0.5"), Unit là chuỗi đơn vị ("g", "ml", "củ") hoặc null.
+    Trước khi trả: tự kiểm tra JSON hợp lệ theo schema. Nếu chưa hợp lệ, tự sửa rồi mới trả."""
 
     return user_text.strip()
 
