@@ -46,10 +46,40 @@ def _extract_json_from_text(text: str) -> str:
 def extract_text(model_response: Dict[str, Any]) -> str:
     # Claude-like: {"content":[{"type":"text","text":"..."}]}
     content = model_response.get("content", [])
-    if not content or content[0].get("type") != "text":
-        raise ValueError("Unexpected response format: missing text content")
-    text = content[0].get("text", "").strip()
-    return text
+    if content and isinstance(content, list) and len(content) > 0:
+        if content[0].get("type") == "text":
+            return content[0].get("text", "").strip()
+    
+    # Titan format: {"results":[{"outputText":"..."}]}
+    results = model_response.get("results", [])
+    if results and isinstance(results, list) and len(results) > 0:
+        output_text = results[0].get("outputText", "")
+        if output_text:
+            return output_text.strip()
+    
+    # Nova format: {"output":{"message":{"content":[{"text":"..."}]}}}
+    output = model_response.get("output", {})
+    if output:
+        message = output.get("message", {})
+        if message:
+            nova_content = message.get("content", [])
+            if nova_content and isinstance(nova_content, list) and len(nova_content) > 0:
+                text_content = nova_content[0].get("text", "")
+                if text_content:
+                    return text_content.strip()
+    
+    # Llama format: {"generation":"..."}
+    generation = model_response.get("generation", "")
+    if generation:
+        return generation.strip()
+    
+    # Fallback: try to find any text field
+    for key in ["text", "response", "answer", "result"]:
+        if key in model_response:
+            return str(model_response[key]).strip()
+    
+    logger.error(f"Cannot extract text from response: {model_response}")
+    raise ValueError("Unexpected response format: no recognizable text content")
 
 def parse_and_validate(model_response: Dict[str, Any]) -> Dish:
     try:

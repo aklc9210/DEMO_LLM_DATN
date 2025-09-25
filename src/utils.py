@@ -17,12 +17,10 @@ def get_logger(name="app"):
 
 
 REGION = os.getenv("AWS_REGION", "ap-southeast-1")
-MODEL_ID = os.getenv("MODEL_ID", "")
+MODEL_ID = os.getenv("MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
-MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "true"
-LIVE_IMAGE_ALWAYS = os.getenv("LIVE_IMAGE_ALWAYS", "true").lower() == "true"
 
-print(f"Config: MODEL_ID={MODEL_ID}, REGION={REGION}, MOCK_MODE={MOCK_MODE}, MAX_TOKENS={MAX_TOKENS}, TEMPERATURE={TEMPERATURE}")
+print(f"Config: MODEL_ID={MODEL_ID}, REGION={REGION}, MAX_TOKENS={MAX_TOKENS}, TEMPERATURE={TEMPERATURE}")
 def to_base64(b: bytes) -> str:
     return base64.b64encode(b).decode("utf-8")

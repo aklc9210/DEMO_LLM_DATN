@@ -44,6 +44,10 @@ class BedrockClient:
     def invoke(self, model_id: str, body: dict, accept: str = "application/json",
                 content_type: str = "application/json") -> dict:
         try:
+            logger.info(f"Invoking model: {model_id}")
+            logger.info(f"Request body keys: {list(body.keys())}")
+            logger.info(f"Request body size: {len(json.dumps(body))}")
+            
             response = self.client.invoke_model(
                 modelId=model_id,
                 body=json.dumps(body).encode("utf-8"),
@@ -52,10 +56,21 @@ class BedrockClient:
             )
             payload = response.get("body")
             text = payload.read().decode("utf-8") if hasattr(payload, "read") else payload
+            
+            logger.info(f"Raw response length: {len(text)}")
+            logger.info(f"Raw response: {text[:1000]}...")  # First 1000 chars
+            
+            if not text or text.strip() == "":
+                logger.error("Empty response from Bedrock!")
+                raise BedrockInvalidResponse("Bedrock returned empty response")
+            
             try:
-                return json.loads(text)
+                result = json.loads(text)
+                logger.info(f"Parsed JSON keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+                return result
             except json.JSONDecodeError as e:
                 logger.error("Invalid JSON from model: %s", text[:500])
                 raise BedrockInvalidResponse(f"Model returned non-JSON: {e}")
         except (BotoCoreError, ClientError) as e:
+            logger.error(f"Bedrock client error: {e}")
             raise self._classify(e)
