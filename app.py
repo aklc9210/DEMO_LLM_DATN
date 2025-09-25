@@ -40,8 +40,8 @@ except Exception as e:
 # ========= Model definitions =========
 IMAGE_MODELS = {
     "anthropic.claude-3-5-sonnet-20240620-v1:0": "Claude 3.5 Sonnet",
-    # Nova Pro không hỗ trợ vision trong Bedrock hiện tại
-    # "amazon.nova-pro-v1:0": "Amazon Nova Pro (Vision)",
+    "amazon.nova-pro-v1:0": "Amazon Nova Pro",
+    "amazon.nova-lite-v1:0": "Amazon Nova Lite",
 }
 
 TEXT_MODELS = {
@@ -85,12 +85,11 @@ def extract_json_from_text(text: str) -> str:
     """
     text = text.strip()
     
-    # Tìm JSON block đầu tiên
     start_idx = text.find('{')
     if start_idx == -1:
         raise ValueError("Không tìm thấy JSON trong response")
     
-    # Tìm end brace matching
+
     brace_count = 0
     end_idx = -1
     
@@ -104,19 +103,15 @@ def extract_json_from_text(text: str) -> str:
                 break
     
     if end_idx == -1:
-        # JSON bị cắt - thử fix
         logger.warning("JSON appears to be truncated, attempting to fix...")
         json_text = text[start_idx:]
         
-        # Thêm closing braces cho các arrays/objects bị thiếu
         open_braces = json_text.count('{') - json_text.count('}')
         open_brackets = json_text.count('[') - json_text.count(']')
         
-        # Đóng arrays trước
         if open_brackets > 0:
             json_text += ']' * open_brackets
             
-        # Đóng objects
         if open_braces > 0:
             json_text += '}' * open_braces
             
@@ -205,31 +200,26 @@ def invoke_model(desc: str, model_id: str, temperature: float, max_tokens: int, 
     t0 = time.time()
     
     if img is not None:
-        # Image processing - hỗ trợ Claude và Nova
+        # Image processing 
         buf = io.BytesIO()
         img_format = "PNG"
         mime = "image/png"
         img.save(buf, img_format)
         b64 = to_base64(buf.getvalue())
         
-        # Choose appropriate image builder based on model
         if 'nova' in model_id.lower():
             body = build_prompt_nova_with_image(desc, b64, mime, temperature=temperature, max_tokens=max_tokens)
         else:
-            # Default to Claude format for image processing
             body = build_prompt_with_image(desc, b64, mime, temperature=temperature, max_tokens=max_tokens)
     else:
-        # Text processing
         body = build_body_for_model(model_id, desc, temperature, max_tokens)
     
     raw = bedrock_client.invoke(model_id=model_id, body=body)
     latency = time.time() - t0
     
-    # Log raw response để debug
     logger.info(f"Raw response type: {type(raw)}")
     logger.info(f"Raw response: {raw}")
     
-    # Kiểm tra nếu response rỗng hoặc None
     if not raw:
         logger.error("Response từ Bedrock là rỗng!")
         raise RuntimeError("AWS Bedrock trả về response rỗng")
@@ -257,7 +247,6 @@ def invoke_model(desc: str, model_id: str, temperature: float, max_tokens: int, 
 def render_result(raw_response: Dict[str, Any], metrics: Dict[str, Any], model_name: str):
     """Render kết quả với 2 columns layout"""
     try:
-        # Debug info trước khi parse
         with st.expander("🔧 Debug - Raw Response", expanded=False):
             st.write("**Response structure:**")
             st.write("Keys:", list(raw_response.keys()) if isinstance(raw_response, dict) else "Not a dict")
@@ -271,14 +260,13 @@ def render_result(raw_response: Dict[str, Any], metrics: Dict[str, Any], model_n
             st.write(f"**Extracted text ({len(extracted_text)} chars):**")
             st.code(extracted_text)
             
-            # Check if JSON appears truncated
             if extracted_text.count('{') != extracted_text.count('}'):
                 st.warning("⚠️ JSON có thể bị cắt (unbalanced braces)")
                 st.write(f"Open braces: {extracted_text.count('{')}, Close braces: {extracted_text.count('}')}")
         
         dish: Dish = parse_and_validate(normalized)
         
-        # Two column layout
+
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -322,7 +310,6 @@ def render_result(raw_response: Dict[str, Any], metrics: Dict[str, Any], model_n
     except Exception as e:
         st.error(f"❌ Parse/Validate thất bại: {e}")
         
-        # Enhanced error info
         col1, col2 = st.columns(2)
         
         with col1:
@@ -330,25 +317,22 @@ def render_result(raw_response: Dict[str, Any], metrics: Dict[str, Any], model_n
             st.json(raw_response)
         
         with col2:
-            # Try to show extracted text and diagnose issue
             try:
                 normalized = normalize_to_claude_like(raw_response)
                 extracted = extract_text(normalized)
                 st.write(f"**📝 Extracted text ({len(extracted)} chars):**")
                 st.code(extracted)
                 
-                # JSON validation check
                 if extracted.count('{') != extracted.count('}'):
                     st.error(f"🔥 JSON bị cắt! Open: {extracted.count('{')}, Close: {extracted.count('}')}")
                     st.info("💡 **Giải pháp:** Tăng max_tokens lên 1024-2048")
                 
-                # Try to extract and show partial JSON
+
                 try:
                     fixed_json = extract_json_from_text(extracted)
                     st.success("✅ JSON đã được sửa:")
                     st.code(fixed_json)
                     
-                    # Try to parse the fixed JSON
                     parsed = json.loads(fixed_json)
                     st.info("🎉 JSON fixed có thể parse được!")
                     
@@ -373,7 +357,7 @@ def render_result(raw_response: Dict[str, Any], metrics: Dict[str, Any], model_n
 # ========= MAIN UI =========
 st.subheader("🍲 Trích xuất nguyên liệu từ mô tả hoặc hình ảnh")
 
-# Input mode selection
+
 input_mode = st.radio("Chọn chế độ nhập:", ["Text", "Image"], horizontal=True)
 
 # Model selection based on input mode
@@ -398,16 +382,19 @@ else:
 col1, col2, col3 = st.columns(3)
 with col1:
     temperature = st.number_input("Temperature", 0.0, 1.0, TEMPERATURE, 0.1)
+
 with col2:
-    # Tăng default max_tokens cho Titan Premier và Claude Sonnet
     default_max_tokens = MAX_TOKENS
     if 'titan-text-premier' in selected_model_id:
         default_max_tokens = 1024
     elif 'claude-3-5-sonnet' in selected_model_id:
         default_max_tokens = 1024
     max_tokens = st.number_input("Max tokens", 64, 4096, default_max_tokens, 64)
+
 with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
     run_extract = st.button("Extract Ingredients", type="primary")
+
 
 # Input based on mode
 if input_mode == "Text":
@@ -423,6 +410,7 @@ else:
             thumb = img.copy()
             thumb.thumbnail((320, 320))
             st.image(thumb, use_container_width=False)
+
 
 # Process extraction
 if run_extract:
