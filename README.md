@@ -2,6 +2,26 @@
 
 Ứng dụng trích xuất nguyên liệu từ mô tả món ăn hoặc hình ảnh, trả về JSON có cấu trúc sử dụng AWS Bedrock AI.
 
+## 🤖 Supported Models
+
+### Text Models
+- **Claude 3.5 Sonnet** - Anthropic's flagship model
+- **Titan Text G1 - Lite** - Amazon's lightweight model (4K tokens, cost-effective)
+- **Titan Text G1 - Express** - Amazon's balanced model (8K tokens, good performance)
+- **Llama 3 8B** - Meta's open-source model
+- **Claude 3.5 Haiku** - Anthropic's fast model
+
+### Image Models  
+- **Claude 3.5 Sonnet** - Text + Image understanding
+- **Amazon Nova Pro** - Multimodal model
+- **Amazon Nova Lite** - Lightweight multimodal model
+
+## 🆕 Model Updates
+
+**Latest Change:** Replaced Titan Text Premier with two new models:
+- **Titan Text G1 - Lite** (`amazon.titan-text-lite-v1`) - Optimized for cost and fine-tuning
+- **Titan Text G1 - Express** (`amazon.titan-text-express-v1`) - Balanced performance and RAG support
+
 ## 🚀 Chạy nhanh
 
 ### 1. Cài đặt

@@ -8,6 +8,7 @@ from PIL import Image
 from .utils import to_base64, get_logger
 from .prompt_builder import (
     build_prompt, build_prompt_with_image, build_prompt_titan,
+    build_prompt_titan_lite, build_prompt_titan_express,
     build_prompt_llama, build_prompt_nova, build_prompt_nova_with_image
 )
 from .models import get_model_cost_estimates
@@ -25,6 +26,14 @@ def build_body_for_model(model_id: str, desc: str, temperature: float, max_token
         logger.info(f"Using Nova prompt builder for {model_id}")
         return build_prompt_nova(desc, temperature=temperature, max_tokens=max_tokens)
 
+    if 'titan-text-lite' in mid:
+        logger.info(f"Using Titan Text G1 - Lite prompt builder for {model_id}")
+        return build_prompt_titan_lite(desc, temperature=temperature, max_tokens=max_tokens)
+    
+    if 'titan-text-express' in mid:
+        logger.info(f"Using Titan Text G1 - Express prompt builder for {model_id}")
+        return build_prompt_titan_express(desc, temperature=temperature, max_tokens=max_tokens)
+    
     if 'titan' in mid:
         logger.info(f"Using Titan prompt builder for {model_id}")
         return build_prompt_titan(desc, temperature=temperature, max_tokens=max_tokens)

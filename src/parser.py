@@ -23,7 +23,6 @@ def _extract_json_from_text(text: str) -> str:
     t = _strip_code_fences(text)
     start = t.find("{")
     if start == -1:
-        # fallback: có thể chuỗi chính là JSON nhưng không bắt đầu bằng '{'
         return t
     depth = 0
     for i in range(start, len(t)):
@@ -33,13 +32,12 @@ def _extract_json_from_text(text: str) -> str:
             depth -= 1
             if depth == 0:
                 candidate = t[start:i+1]
-                # kiểm tra nhanh có phải JSON hợp lệ không
                 try:
                     json.loads(candidate)
                     return candidate
                 except Exception:
                     break
-    # nếu không tìm được theo cặp ngoặc, thử regex thô cuối cùng
+
     m = re.search(r"\{[\s\S]*\}", t)
     return m.group(0) if m else t
 
@@ -89,6 +87,6 @@ def parse_and_validate(model_response: Dict[str, Any]) -> Dish:
         return Dish.model_validate(data)
     except (json.JSONDecodeError, ValidationError, ValueError) as e:
         logger.exception("Failed to parse/validate: %s", e)
-        # debug tiện lợi: log ra vài ký tự đầu
+
         logger.error("Raw text (head): %s", raw_text[:500] if 'raw_text' in locals() else "")
         raise
