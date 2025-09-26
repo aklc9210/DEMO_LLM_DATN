@@ -1,35 +1,62 @@
-"""Model inference service."""
+"""Model inference service with prompt versioning (v0 default, v1/v2/v3)."""
 import time
 import io
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image
 
 from .utils import to_base64, get_logger
-from .prompt_builder import build_prompt as build_prompt
 from .prompt_builder import (
-    build_prompt, build_prompt_with_image, build_prompt_titan,
-    build_prompt_llama, build_prompt_nova, build_prompt_nova_with_image,
+    # Default builders
+    build_prompt, build_prompt_titan, build_prompt_llama, build_prompt_nova,
+    build_prompt_with_image, build_prompt_nova_with_image,
+    # Versioned builders
+    build_prompt_v1, build_prompt_v2, build_prompt_v3,
+    build_prompt_titan_v1, build_prompt_titan_v2, build_prompt_titan_v3,
+    build_prompt_llama_v1, build_prompt_llama_v2, build_prompt_llama_v3,
+    build_prompt_nova_v1, build_prompt_nova_v2, build_prompt_nova_v3,
 )
 from .models import get_model_cost_estimates
 
 logger = get_logger("inference")
 
 
-def build_body_for_model(model_id: str, desc: str, temperature: float, max_tokens: int) -> dict:
-    logger.info(f"Building prompt for model: {model_id}")
+def _pick_builder(model_id: str, prompt_version: int):
+    """
+    Chọn hàm build body theo model + phiên bản prompt.
+    prompt_version: 0 = dùng prompt mặc định cũ; 1/2/3 = các phiên bản mới.
+    """
     mid = (model_id or "").strip().lower()
 
-    if 'nova' in mid:
-        return build_prompt_nova(desc, temperature=temperature, max_tokens=max_tokens)
+    def pick(claude, titan, llama, nova):
+        if "nova" in mid:
+            return nova
+        if "titan-text-lite" in mid or "titan-text-express" in mid:
+            return titan
+        if "llama" in mid:
+            return llama
+        # mặc định Claude
+        return claude
 
-    if 'titan-text-lite' in mid:
-        return build_prompt_titan(desc, temperature=temperature, max_tokens=max_tokens)
+    if prompt_version == 1:
+        return pick(build_prompt_v1, build_prompt_titan_v1, build_prompt_llama_v1, build_prompt_nova_v1)
+    if prompt_version == 2:
+        return pick(build_prompt_v2, build_prompt_titan_v2, build_prompt_llama_v2, build_prompt_nova_v2)
+    if prompt_version == 3:
+        return pick(build_prompt_v3, build_prompt_titan_v3, build_prompt_llama_v3, build_prompt_nova_v3)
 
-    if 'llama' in mid:
-        return build_prompt_llama(desc, temperature=temperature, max_tokens=max_tokens)
+    # version 0 (mặc định) dùng prompt cũ
+    return pick(build_prompt, build_prompt_titan, build_prompt_llama, build_prompt_nova)
 
-    # Claude Anthropic mặc định
-    return build_prompt(desc, temperature=temperature, max_tokens=max_tokens)
+
+def build_body_for_model(model_id: str, desc: str, temperature: float, max_tokens: int,
+                         prompt_version: int = 0) -> dict:
+    """
+    Tạo request body cho model theo phiên bản prompt (0/1/2/3).
+    Backward-compatible: nếu không truyền prompt_version thì dùng prompt mặc định cũ.
+    """
+    logger.info(f"Building prompt for model: {model_id} (v{prompt_version})")
+    builder = _pick_builder(model_id, prompt_version)
+    return builder(desc, temperature=temperature, max_tokens=max_tokens)
 
 
 def invoke_model(
@@ -38,11 +65,15 @@ def invoke_model(
     model_id: str,
     temperature: float,
     max_tokens: int,
-    img: Optional[Image.Image] = None
+    img: Optional[Image.Image] = None,
+    prompt_version: int = 0,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Invoke model and return (response, metrics).
     metrics contains: latency_s, tokens_in, tokens_out, cost_est_usd
+
+    - Giữ nguyên cách gọi cũ (img=None, không có prompt_version).
+    - Nếu muốn test phiên bản prompt: truyền prompt_version=1/2/3.
     """
     if not bedrock_client or not model_id:
         raise RuntimeError("Bedrock client/model_id not ready")
@@ -51,18 +82,19 @@ def invoke_model(
 
     # Build request body
     if img is not None:
+        # Multimodal: dùng prompt hình như hiện tại (không áp version text)
         buf = io.BytesIO()
         img_format = "PNG"
         mime = "image/png"
         img.save(buf, img_format)
         b64 = to_base64(buf.getvalue())
 
-        if 'nova' in model_id.lower():
+        if "nova" in model_id.lower():
             body = build_prompt_nova_with_image(desc, b64, mime, temperature=temperature, max_tokens=max_tokens)
         else:
             body = build_prompt_with_image(desc, b64, mime, temperature=temperature, max_tokens=max_tokens)
     else:
-        body = build_body_for_model(model_id, desc, temperature, max_tokens)
+        body = build_body_for_model(model_id, desc, temperature, max_tokens, prompt_version=prompt_version)
 
     # Call Bedrock: nhận (raw_json, headers)
     raw, hdrs = bedrock_client.invoke(model_id=model_id, body=body)
@@ -104,7 +136,7 @@ def invoke_model(
     tokens_in = int(tokens_in or 0)
     tokens_out = int(tokens_out or 0)
 
-    # ---------- GIÁ /1K TOKENS (ĐỒNG BỘ TỪ AWS PRICING) ----------
+    # ---------- GIÁ /1K TOKENS ----------
     cost_in_1k, cost_out_1k = get_model_cost_estimates(model_id)
     cost_est = (tokens_in / 1000.0) * cost_in_1k + (tokens_out / 1000.0) * cost_out_1k
 
