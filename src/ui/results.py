@@ -64,21 +64,6 @@ def _render_metrics(metrics: Dict[str, Any], model_name: str, extracted_text: st
     else:
         st.warning("🐌 Tốc độ: Chậm")
 
-    # Response quality indicators
-    response_length = len(extracted_text)
-    if response_length > 900:
-        st.info("📄 Response dài - chất lượng cao")
-    elif response_length < 300:
-        st.warning("📝 Response ngắn - có thể thiếu thông tin")
-
-    # Model-specific tips
-    if 'titan-premier' in model_name.lower():
-        st.info("💡 Titan Premier: Tốt cho response phức tạp")
-    elif 'claude' in model_name.lower():
-        st.info("🎯 Claude: Chính xác cao, hiểu context tốt")
-    elif 'llama' in model_name.lower():
-        st.info("🦙 Llama: Mã nguồn mở, cost-effective")
-
 
 def _render_error(error: Exception, raw_response: Dict[str, Any], model_name: str):
     """Render error information and debugging details."""
@@ -115,12 +100,3 @@ def _render_error(error: Exception, raw_response: Dict[str, Any], model_name: st
         except Exception as extract_err:
             st.error(f"Cannot extract text: {extract_err}")
 
-    # Response length analysis
-    try:
-        response_length = len(extract_text(normalize_to_claude_like(raw_response)))
-        if response_length > 800:
-            st.info("ℹ️ **Response dài** - rất có thể bị cắt do max_tokens quá thấp")
-        if 'titan-text-premier' in model_name.lower():
-            st.info("💡 **Titan Premier** thường cần max_tokens >= 1024")
-    except:
-        pass

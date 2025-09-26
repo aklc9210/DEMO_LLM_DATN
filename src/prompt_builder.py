@@ -99,14 +99,6 @@ def build_prompt_titan(user_dish_description: str, temperature: float = 0.2, max
         }
     }
 
-def build_prompt_titan_lite(user_dish_description: str, temperature: float = 0.2, max_tokens: int = 512):
-    """Tạo prompt cho Amazon Titan Text G1 - Lite"""
-    return build_prompt_titan(user_dish_description, temperature, max_tokens)
-
-def build_prompt_titan_express(user_dish_description: str, temperature: float = 0.2, max_tokens: int = 512):
-    """Tạo prompt cho Amazon Titan Text G1 - Express"""
-    return build_prompt_titan(user_dish_description, temperature, max_tokens)
-
 
 def build_prompt_llama(user_dish_description: str, temperature: float = 0.2, max_tokens: int = 512):
     """Tạo prompt cho Llama models"""
@@ -272,3 +264,5 @@ def build_prompt_nova_with_image(
             "maxTokens": max_tokens
         }
     }
+
+

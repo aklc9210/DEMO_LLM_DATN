@@ -1,15 +1,14 @@
 """Model inference service."""
-
 import time
 import io
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image
 
 from .utils import to_base64, get_logger
+from .prompt_builder import build_prompt as build_prompt
 from .prompt_builder import (
     build_prompt, build_prompt_with_image, build_prompt_titan,
-    build_prompt_titan_lite, build_prompt_titan_express,
-    build_prompt_llama, build_prompt_nova, build_prompt_nova_with_image
+    build_prompt_llama, build_prompt_nova, build_prompt_nova_with_image,
 )
 from .models import get_model_cost_estimates
 
@@ -17,32 +16,19 @@ logger = get_logger("inference")
 
 
 def build_body_for_model(model_id: str, desc: str, temperature: float, max_tokens: int) -> dict:
-    """Create prompt body for specific model."""
     logger.info(f"Building prompt for model: {model_id}")
-
     mid = (model_id or "").strip().lower()
 
     if 'nova' in mid:
-        logger.info(f"Using Nova prompt builder for {model_id}")
         return build_prompt_nova(desc, temperature=temperature, max_tokens=max_tokens)
 
     if 'titan-text-lite' in mid:
-        logger.info(f"Using Titan Text G1 - Lite prompt builder for {model_id}")
-        return build_prompt_titan_lite(desc, temperature=temperature, max_tokens=max_tokens)
-    
-    if 'titan-text-express' in mid:
-        logger.info(f"Using Titan Text G1 - Express prompt builder for {model_id}")
-        return build_prompt_titan_express(desc, temperature=temperature, max_tokens=max_tokens)
-    
-    if 'titan' in mid:
-        logger.info(f"Using Titan prompt builder for {model_id}")
         return build_prompt_titan(desc, temperature=temperature, max_tokens=max_tokens)
 
     if 'llama' in mid:
-        logger.info(f"Using Llama prompt builder for {model_id}")
         return build_prompt_llama(desc, temperature=temperature, max_tokens=max_tokens)
 
-    logger.info(f"Using Claude prompt builder for {model_id}")
+    # Claude Anthropic mặc định
     return build_prompt(desc, temperature=temperature, max_tokens=max_tokens)
 
 
@@ -63,6 +49,7 @@ def invoke_model(
 
     t0 = time.time()
 
+    # Build request body
     if img is not None:
         buf = io.BytesIO()
         img_format = "PNG"
@@ -77,32 +64,54 @@ def invoke_model(
     else:
         body = build_body_for_model(model_id, desc, temperature, max_tokens)
 
-    raw = bedrock_client.invoke(model_id=model_id, body=body)
+    # Call Bedrock: nhận (raw_json, headers)
+    raw, hdrs = bedrock_client.invoke(model_id=model_id, body=body)
     latency = time.time() - t0
 
-    logger.info(f"Raw response type: {type(raw)}")
-    logger.info(f"Raw response: {raw}")
-
     if not raw:
-        logger.error("Empty response from Bedrock!")
         raise RuntimeError("AWS Bedrock returned empty response")
 
-    # Estimate metrics (simplified)
-    tokens_in = len(desc.split()) * 1.3  # rough estimate
-    from .parser import extract_text
-    from .response_processor import normalize_to_claude_like
-    response_text = extract_text(normalize_to_claude_like(raw))
-    tokens_out = len(response_text.split()) * 1.3
+    # ---------- TOKEN THẬT ----------
+    tokens_in: Optional[int] = None
+    tokens_out: Optional[int] = None
 
-    # Cost estimation
-    cost_per_1k_in, cost_per_1k_out = get_model_cost_estimates(model_id)
-    cost_est = (tokens_in/1000 * cost_per_1k_in) + (tokens_out/1000 * cost_per_1k_out)
+    # a) InvokeModel: token nằm ở HTTP headers
+    if hdrs:
+        try:
+            tokens_in = int(hdrs.get("x-amzn-bedrock-input-token-count")
+                            or hdrs.get("x-amzn-bedrock-input-tokens") or 0)
+            tokens_out = int(hdrs.get("x-amzn-bedrock-output-token-count")
+                             or hdrs.get("x-amzn-bedrock-output-tokens") or 0)
+        except Exception:
+            pass
+
+    # b) Converse/ConverseStream: token nằm trong body.usage
+    if (tokens_in is None or tokens_out is None) and isinstance(raw, dict):
+        usage = raw.get("usage") or {}
+        if isinstance(usage, dict):
+            if tokens_in is None:
+                tokens_in = usage.get("inputTokens") or usage.get("input_tokens")
+            if tokens_out is None:
+                tokens_out = usage.get("outputTokens") or usage.get("output_tokens")
+
+    # c) Fallback: đếm input bằng CountTokens (không tốn phí)
+    if not tokens_in:
+        try:
+            tokens_in = bedrock_client.count_tokens(model_id, body) or 0
+        except Exception:
+            tokens_in = 0
+
+    tokens_in = int(tokens_in or 0)
+    tokens_out = int(tokens_out or 0)
+
+    # ---------- GIÁ /1K TOKENS (ĐỒNG BỘ TỪ AWS PRICING) ----------
+    cost_in_1k, cost_out_1k = get_model_cost_estimates(model_id)
+    cost_est = (tokens_in / 1000.0) * cost_in_1k + (tokens_out / 1000.0) * cost_out_1k
 
     metrics = {
         "latency_s": round(latency, 2),
-        "tokens_in": int(tokens_in),
-        "tokens_out": int(tokens_out),
-        "cost_est_usd": round(cost_est, 6)
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cost_est_usd": round(cost_est, 6),
     }
-
     return raw, metrics

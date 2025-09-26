@@ -5,6 +5,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from .utils import get_logger, REGION
+from botocore.response import StreamingBody
 
 
 logger = get_logger("bedrock")
@@ -35,42 +36,67 @@ class BedrockClient:
                 return BedrockTimeout(str(err))
         return BedrockError(str(err))
 
+    def _headers_lower(self, resp) -> dict:
+        try:
+            return {k.lower(): v for k, v in resp["ResponseMetadata"]["HTTPHeaders"].items()}
+        except Exception:
+            return {}
+
     @retry(
         reraise=True,
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=0.8, min=1, max=8),
         retry=retry_if_exception_type((BedrockRateLimit, BedrockTimeout, BotoCoreError, ClientError))
     )
-    def invoke(self, model_id: str, body: dict, accept: str = "application/json",
-                content_type: str = "application/json") -> dict:
+    def invoke(self, model_id: str, body: dict,
+            accept: str = "application/json",
+            content_type: str = "application/json") -> tuple[dict, dict]:
+        """
+        Trả về (json_result, headers_lowercased).
+        Headers chứa token thật: x-amzn-bedrock-input-token-count, x-amzn-bedrock-output-token-count
+        """
         try:
             logger.info(f"Invoking model: {model_id}")
-            logger.info(f"Request body keys: {list(body.keys())}")
-            logger.info(f"Request body size: {len(json.dumps(body))}")
-            
-            response = self.client.invoke_model(
+            resp = self.client.invoke_model(
                 modelId=model_id,
-                body=json.dumps(body).encode("utf-8"),
                 accept=accept,
                 contentType=content_type,
+                body=json.dumps(body)
             )
-            payload = response.get("body")
-            text = payload.read().decode("utf-8") if hasattr(payload, "read") else payload
-            
-            logger.info(f"Raw response length: {len(text)}")
-            logger.info(f"Raw response: {text[:1000]}...")  # First 1000 chars
-            
+            headers = self._headers_lower(resp)
+            # body có thể là StreamingBody
+            raw = resp.get("body")
+            if isinstance(raw, StreamingBody):
+                text = raw.read()
+                text = text.decode("utf-8", errors="ignore")
+            else:
+                text = raw if isinstance(raw, str) else ""
             if not text or text.strip() == "":
-                logger.error("Empty response from Bedrock!")
                 raise BedrockInvalidResponse("Bedrock returned empty response")
-            
             try:
-                result = json.loads(text)
-                logger.info(f"Parsed JSON keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
-                return result
+                return json.loads(text), headers
             except json.JSONDecodeError as e:
-                logger.error("Invalid JSON from model: %s", text[:500])
                 raise BedrockInvalidResponse(f"Model returned non-JSON: {e}")
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Bedrock client error: {e}")
             raise self._classify(e)
+
+
+    def count_tokens(self, model_id: str, request_body: dict, content_type: str = "application/json") -> int:
+        """
+        Dùng Bedrock CountTokens để đếm input tokens CHUẨN trước khi invoke.
+        Không tính phí. Kết quả bằng đúng số sẽ bị tính tiền khi invoke cùng nội dung.
+        """
+        try:
+            resp = self.client.count_tokens(
+                modelId=model_id,
+                contentType=content_type,
+                body=json.dumps(request_body)
+            )
+            usage = resp.get("body") 
+
+            if isinstance(usage, (bytes, str)):
+                usage = json.loads(usage if isinstance(usage, str) else usage.decode("utf-8"))
+            return int(usage.get("totalTokens") or usage.get("inputTokens") or 0)
+        except Exception as e:
+            logger.warning(f"CountTokens failed: {e}")
+            return 0
