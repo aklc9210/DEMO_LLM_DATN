@@ -88,7 +88,7 @@ class StreamlitApp:
                 if input_mode == "Text":
                     raw_response, metrics = invoke_model(
                         self.bedrock_client, user_desc, selected_model_id,
-                        float(temperature), int(max_tokens), prompt_version=3                   )
+                        float(temperature), int(max_tokens)                   )
                 else:
                     raw_response, metrics = invoke_model(
                         self.bedrock_client, "", selected_model_id,

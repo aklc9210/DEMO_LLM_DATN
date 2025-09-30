@@ -9,18 +9,10 @@ class Ingredient(BaseModel):
 
 
 class Dish(BaseModel):
-    dish_name: str = Field(..., min_length=1)
+    dish_name: Optional[str] = Field(None)
     cuisine: Optional[str] = None
-    ingredients: List[Ingredient] = Field(..., min_items=1)
+    ingredients: List[Ingredient] = Field(default_factory=list, min_items=0)
     notes: Optional[List[str]] = None
-
-
-@field_validator("ingredients")
-@classmethod
-def _non_empty(cls, v):
-    if not v:
-        raise ValueError("ingredients cannot be empty")
-    return v
 
 
 DISH_JSON_SCHEMA = Dish.model_json_schema()
